@@ -15,68 +15,10 @@
         <div 
             v-if="main.TotalConfirmed && !loading" 
             class="result-box">
-            <div class="result-main card">
-                <p class="title" v-if="country.length == 0">En el mundo</p>
-                <p class="title" v-else>
-                    En {{ country[0].Country }} <button @click="back()" class="volver">Volver</button>
-                </p>
-                <p class="main">
-                    {{ format(main.TotalConfirmed) }}
-                    <span class="text-casos">
-                        casos
-                    </span>
-                </p>
-                <ul>
-                    <li>
-                        <span class="title">
-                            Fallecidos
-                        </span>
-                        <span class="data">
-                            {{ format(main.TotalDeaths) }}
-                        </span>
-                    </li>
-                    <li>
-                        <span class="title">
-                            Recuperados
-                        </span>
-                        <span class="data">
-                            {{ format(main.TotalRecovered) }}
-                        </span>
-                    </li>
-                </ul>
-            </div>
-            <div class="countries card" v-show="country.length == 0">
-                <p class="title">
-                    Paises con mas casos
-                </p>
-                <ul>
-                    <li v-for="country in countries"
-                        :key="country.Slug">
-                        <span class="title">
-                            {{ country.Country }}
-                        </span>
-                        <span class="data">
-                            {{ format(country.TotalConfirmed) }}
-                        </span>
-                    </li>
-                </ul>
-            </div>
-            <div class="country card" v-if="country.length > 0">
-                <p class="title">
-                    En {{ country[0].Country }} por día
-                </p>
-                <ul>
-                    <li v-for="(country_case, i) in country"
-                        :key="i">
-                        <span class="title">
-                            {{ date(country_case.Date) }}
-                        </span>
-                        <span class="data">
-                            {{ format(country_case.Confirmed) }}
-                        </span>
-                    </li>
-                </ul>
-            </div>
+            <result :main="main" :country="country" @back="back"></result>
+            <countries :country="country" :countries="countries" @showCountry="showCountry"></countries>
+            <country :country="country"
+                    @fromDate="fromDate"></country>
         </div>
     </main>
 </div>
@@ -84,16 +26,25 @@
 
 <script>
 import axios from 'axios'
-import moment from 'moment'
+import { loadProgressBar } from 'axios-progress-bar'
+import 'axios-progress-bar/dist/nprogress.css'
 
 import Autocomplete from '@trevoreyre/autocomplete-vue'
 import '@trevoreyre/autocomplete-vue/dist/style.css'
-import Loader from './components/Loader.vue'
+
+import loader from './components/loader.vue'
+import result from './components/result.vue'
+import countries from './components/countries.vue'
+import country from './components/country.vue'
+
 export default {
     name: 'App',
     components: {
         Autocomplete,
-        Loader,
+        loader,
+        result,
+        countries,
+        country,
     },
     data() {
         return {
@@ -102,16 +53,13 @@ export default {
             countries: [],
             country: [],
 
-            loading: false,
+            loading: true,
         }
     },
     created() {
         this.getData()
     },
     methods: {
-        format(x) {
-            return x.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
-        },
         back() {
             this.country = []
             this.getData()
@@ -155,37 +103,133 @@ export default {
             axios.get(url)
             .then(res => {
                 this.loading = false
-                this.country = res.data
-                this.country = this.country.reverse()
-                let last_day = this.country[0]
-                this.main.TotalConfirmed = last_day.Confirmed 
-                this.main.TotalDeaths = last_day.Deaths 
-                this.main.TotalRecovered = last_day.Recovered 
+                this.setCountry(res.data)
             })
             .catch(err => {
                 console.log(err)
                 this.loading = false
             })
         },
-        date(d) {
-            return moment(d).format('DD/MM/YY')
+
+        // Countries
+        showCountry(country) {
+            this.loading = true
+            loadProgressBar()
+            let url = this.api_url 
+            if (country.Slug == 'united-states') {
+                let to = this.countries[0].Date
+                console.log(to)
+                let day_to = Number(to.substring(8, 10))
+                let from = to.replace(day_to, day_to-1)
+                console.log(day_to)
+                console.log(from)
+                url += `country/united-states?from=${from}&to=${to}`
+            } else {
+                url += 'country/'+country.Slug
+            }
+            console.log(url)
+            axios.get(url)
+            .then(res => {
+                this.loading = false
+                if (country.Slug == 'united-states') {
+                    this.setUsa()
+                } else {
+                    this.setCountry(res.data)
+                }
+            })
         },
+        setUsa() {
+            let provinces = []
+            let provinces_name = []
+            this.country.forEach(c => {
+                if (this.includesProvince(c.Province)) {
+                    let province = {}
+                    let province.cities = []
+                    let city = {}
+                    city.name = c.city
+                    city.confirmed = c.Confirmed
+                    city.deaths = c.Deaths
+                    city.recovered = c.Recovered
+
+                    province.name = c.Province
+                    province.cities.push(city)
+                    provinces.push(province)
+                } else {
+                    let i = provinces.indexOf(c.Provice)
+                    let province = provinces[i]
+                    let city = {}
+                    city.name = c.city
+                    city.confirmed = c.Confirmed
+                    city.deaths = c.Deaths
+                    city.recovered = c.Recovered
+                    provinces.push(city)
+                }
+            })
+            this.country = provinces
+            console.log(provinces)
+        },
+        includesProvince(province) {
+            
+        },
+        setCountry(country) {
+            this.country = country
+            this.country = this.country.reverse()
+            let last_day = this.country[0]
+            this.main.TotalConfirmed = last_day.Confirmed 
+            this.main.TotalDeaths = last_day.Deaths 
+            this.main.TotalRecovered = last_day.Recovered 
+        },
+
+        // Country
+        async fromDate(country) {
+            this.loading = true
+            let url = `${this.api_url}world?from=${country.Date}&to=${country.Date}`
+            console.log(`url: ${url}`)
+            let res = await axios.get(url)
+            console.log(res)
+        }
     }
 }
 </script>
 
 <style>
+
+#nprogress .bar {
+    background: red !important;
+}
+
+#nprogress .peg {
+    box-shadow: 0 0 10px red, 0 0 5px red !important;
+}
+
+#nprogress .spinner-icon {
+    border-top-color: red !important;
+    border-left-color: red !important;
+}
 * {
     box-sizing: border-box;
 }
 #app {
     font-family: Avenir, Helvetica, Arial, sans-serif;
-}
-main {
+    background-size: cover;
+    background-position: bottom;
+    background: linear-gradient(#66ADF7, #2971BD);
+    transition: background-color 0.4s ease;
     min-height: 100vh;
     max-height: 100vh;
     overflow: auto;
-    background: linear-gradient(#5F9FE2, #2971BD);
+}
+@media screen and (min-width: 768px) {
+    main {
+        width: 50%;
+        margin: auto;
+    }
+}
+#app.bg-red {
+    background-color: #DA0E0E;
+}
+main {
+    overflow: auto;
     padding: 1em;
 }
 .search-box {
@@ -195,15 +239,7 @@ main {
     justify-content: center;
 }
 .search-input {
-    width: 90%;
-}
-.volver {
-    text-shadow: none;
-    padding: .2em 1em;
-    border: 2px solid #5F9FE2;
-    border-radius: .7em;
-    font-size: 1em;
-    color: #333;
+    width: 100%;
 }
 .result-box {
     display: flex;
@@ -212,7 +248,7 @@ main {
     align-items: center;
 }
 .card{
-    width: 85%;
+    width: 100%;
     background: rgba(255,255,255,.5);
     border-radius: .3em;
     padding: .7em;
@@ -220,27 +256,11 @@ main {
     color: #333;
     margin-bottom: 20px;
 }
-.card-padding {
-    padding: 0 .7em;
-}
-.result-main p {
-    margin: 0;
-}
-.result-main > .title-main {
-    font-size: 1em;
-    color: #FFF;
-    text-shadow: 2px 2px 1px #000;
-}
-.text-casos {
-    text-shadow: 2px 2px 1px #000;
-    font-size: .3em;
-    display: block;
-}
 .card > .title {
     text-align: start;
     font-weight: 700;
     font-size: 1.2em;
-    border-left: 4px solid #2971BD;
+    border-left: 4px solid #FFF;
     padding: .5em .7em;
     color: #FFF;
     text-shadow: 1px 1px 5px #000;
@@ -248,12 +268,6 @@ main {
     display: flex;
     align-items: center;
     justify-content: space-between;
-}
-.result-main .main {
-    font-weight: 700;
-    font-size: 3.5em;
-    color: #FFF;
-    text-shadow: 2px 2px 2px #000;
 }
 ul {
     list-style: none;
@@ -272,6 +286,7 @@ li:last-child {
 li .title {
     text-align: start;
     font-size: 1em;
+    font-weight: 600;
 }
 li .data {
     font-size: 1.2em;
