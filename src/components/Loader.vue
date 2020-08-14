@@ -1,5 +1,9 @@
 <template>
-<div v-show="loading" class="loader"></div>
+    <b-row class="loader-row">
+        <b-col>
+            <div v-show="loading" class="loader"></div>
+        </b-col>
+    </b-row>
 </template>
 <script>
 export default {
@@ -7,6 +11,9 @@ export default {
 }
 </script>
 <style>
+.loader-row {
+  margin-bottom: 0 !important;
+}
 .loader,
 .loader:before,
 .loader:after {

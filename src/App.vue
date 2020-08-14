@@ -1,57 +1,64 @@
 <template>
 <div id="app">
     <main>
-        <div class="search-box">
-            <autocomplete
-                class="search-input"
-                :search="search"
-                @submit="handleSubmit"
-                :get-result-value="getResultValue"
-                placeholder="Buscar un pais..."
-                aria-label="Buscar un pais..."
-                ></autocomplete>
-        </div>
-        <loader :loading="loading"></loader>
-        <div 
-            v-if="main.TotalConfirmed && !loading" 
-            class="result-box">
-            <result :main="main" :country="country" @back="back"></result>
-            <countries :country="country" :countries="countries" @showCountry="showCountry"></countries>
-            <country :country="country"
-                    @fromDate="fromDate"></country>
-        </div>
+        <b-container fluid>
+            <search 
+            :countries="countries"
+            @showCountry="showCountry"
+            @setLoading="setLoading"></search>
+            <loader :loading="loading"></loader>
+            <back 
+            v-show="(country_cases.length > 0 || provinces.length > 0) && !loading"
+            @back="back"></back>
+            <global-cases 
+            v-if="country_cases.length == 0 && provinces.length == 0 && !loading"
+            :provinces="provinces" 
+            :global_cases="global_cases" 
+            :country_cases="country_cases" 
+            @back="back"></global-cases>
+            <countries 
+            v-if="!loading && countries.length"
+            :provinces="provinces" 
+            :country_cases="country_cases" 
+            :countries="countries" 
+            @showCountry="showCountry"></countries>
+            <country-cases 
+            v-show="!loading"
+            :provinces="provinces" 
+            :country_cases="country_cases"
+            @fromDate="fromDate"></country-cases>
+        </b-container>
     </main>
 </div>
 </template>
 
 <script>
-import axios from 'axios'
 import { loadProgressBar } from 'axios-progress-bar'
 import 'axios-progress-bar/dist/nprogress.css'
-
-import Autocomplete from '@trevoreyre/autocomplete-vue'
-import '@trevoreyre/autocomplete-vue/dist/style.css'
-
-import loader from './components/loader.vue'
-import result from './components/result.vue'
-import countries from './components/countries.vue'
-import country from './components/country.vue'
+ 
+import Search from './components/Search.vue'
+import Loader from './components/Loader.vue'
+import GlobalCases from './components/GlobalCases.vue'
+import Countries from './components/Countries.vue'
+import CountryCases from './components/CountryCases.vue'
+import Back from './components/Back.vue'
 
 export default {
     name: 'App',
     components: {
-        Autocomplete,
-        loader,
-        result,
-        countries,
-        country,
+        Search,
+        Loader,
+        GlobalCases,
+        Countries,
+        CountryCases,
+        Back,
     },
     data() {
         return {
-            api_url: 'https://api.covid19api.com/',
-            main: {},
+            global_cases: {},
             countries: [],
-            country: [],
+            country_cases: [],
+            provinces: [],
 
             loading: true,
         }
@@ -60,17 +67,21 @@ export default {
         this.getData()
     },
     methods: {
+        setLoading(value) {
+            this.loading = value
+        },
         back() {
-            this.country = []
+            this.country_cases = []
+            this.provinces = []
             this.getData()
         },  
         getData() {
             this.loading = true
-            let url = this.api_url + 'summary'
-            axios.get(url)
+            this.$axios.get('summary')
             .then(res => {
+                console.log(res.data)
                 this.loading = false
-                this.main = res.data.Global
+                this.global_cases = res.data.Global
                 this.countries = res.data.Countries
                 this.orderCountries()
             })
@@ -83,101 +94,134 @@ export default {
             this.countries.sort(function(a, b) {
                 return b.TotalConfirmed - a.TotalConfirmed;
             });
-            this.countries_name = this.countries.map(country => {
-                    return country.Country
-            })
         },
-        search(input) {
-            if (input.length < 1) { return [] }
-            return this.countries.filter(country => {
-                return country.Country.toLowerCase()
-                .startsWith(input.toLowerCase())
-            })
-        },
-        getResultValue(result) {
-            return result.Country
-        },
-        handleSubmit(result) {
-            this.loading = true
-            let url = this.api_url + 'country/'+result.Slug
-            axios.get(url)
-            .then(res => {
-                this.loading = false
-                this.setCountry(res.data)
-            })
-            .catch(err => {
-                console.log(err)
-                this.loading = false
-            })
+        orderProvinces() {
+            this.provinces.sort(function(a, b) {
+                return this.cases(b) - this.cases(a);
+            });
         },
 
+        isSpecialCountry(country) {
+            if (country.Slug == 'united-states' || country.Slug == 'united-kingdom' || country.Slug == 'france' || country.Slug == 'canada' || country.Slug == 'china' || country.Slug == 'netherlands') {
+                return true
+            } 
+            return false
+        },
         // Countries
         showCountry(country) {
+            console.log(country)
             this.loading = true
             loadProgressBar()
-            let url = this.api_url 
-            if (country.Slug == 'united-states') {
+            let url = ''
+            if (this.isSpecialCountry(country)) {
                 let to = this.countries[0].Date
-                console.log(to)
+                let hora = to.substring(11, 19)
+                to = to.replace(hora, '00:00:00')
                 let day_to = Number(to.substring(8, 10))
                 let from = to.replace(day_to, day_to-1)
-                console.log(day_to)
-                console.log(from)
-                url += `country/united-states?from=${from}&to=${to}`
+                url += `country/${country.Slug}?from=${from}&to=${to}`
             } else {
                 url += 'country/'+country.Slug
             }
-            console.log(url)
-            axios.get(url)
+            this.$axios.get(url)
             .then(res => {
+                // console.log(res.data)
                 this.loading = false
-                if (country.Slug == 'united-states') {
-                    this.setUsa()
+                if (this.isSpecialCountry(country)) {
+                    this.setCountryWithProvinces(res.data)
                 } else {
                     this.setCountry(res.data)
                 }
             })
         },
-        setUsa() {
-            let provinces = []
-            let provinces_name = []
-            this.country.forEach(c => {
-                if (this.includesProvince(c.Province)) {
-                    let province = {}
-                    let province.cities = []
-                    let city = {}
-                    city.name = c.city
-                    city.confirmed = c.Confirmed
-                    city.deaths = c.Deaths
-                    city.recovered = c.Recovered
+        setCountryWithProvinces(provinces) {
+            provinces.forEach(province => { 
+                if (!this.includesProvince(province)) {
+                    let _province = {}
+                    _province.name = province.Province
+                    _province.cities = []
 
-                    province.name = c.Province
-                    province.cities.push(city)
-                    provinces.push(province)
-                } else {
-                    let i = provinces.indexOf(c.Provice)
-                    let province = provinces[i]
                     let city = {}
-                    city.name = c.city
-                    city.confirmed = c.Confirmed
-                    city.deaths = c.Deaths
-                    city.recovered = c.Recovered
-                    provinces.push(city)
+                    city.name = province.City
+                    city.confirmed = province.Confirmed
+                    city.deaths = province.Deaths
+                    city.recovered = province.Recovered
+
+                    _province.cities.push(city)
+                    _province.Country = province.Country
+                    this.provinces.push(_province)
+                } else {
+                    let _province = this.getProvince(province)
+
+                    let city = {}
+                    city.name = province.city
+                    city.confirmed = province.Confirmed
+                    city.deaths = province.Deaths
+                    city.recovered = province.Recovered
+                    _province.cities.push(city)
+                    _province.Country = province.Country
                 }
             })
-            this.country = provinces
-            console.log(provinces)
+            this.calculateTotal(provinces[0])
+        },
+        calculateTotal(first_province) {
+            let confirmed = 0
+            let deaths = 0
+            let recovered = 0
+            let index = 0
+            this.provinces.forEach(province => {
+                index++
+                if (index == this.provinces.length) {
+                    console.log('entro con ')
+                    console.log(this.provinces[index-1])
+                    this.provinces.splice(index-1, 1)
+                } else {
+                    let confirmed_city = 0
+                    let deaths_city = 0
+                    let recovered_city = 0
+                    province.cities.forEach(city => {
+                        confirmed_city += city.confirmed
+                        deaths_city += city.deaths
+                        recovered_city += city.recovered
+                    })
+                    province.confirmed = confirmed_city
+                    province.deaths = deaths_city
+                    province.recovered = recovered_city
+                    confirmed += confirmed_city
+                    deaths += deaths_city
+                    recovered += recovered_city
+                }
+            })
+            this.global_cases.TotalConfirmed = confirmed 
+            this.global_cases.TotalDeaths = deaths 
+            this.global_cases.TotalRecovered = recovered 
+            this.global_cases.country = first_province.Country
         },
         includesProvince(province) {
-            
+            let has_province = false
+            this.provinces.forEach(_province => {
+                if (_province.name == province.Province) {
+                    has_province = true
+                }
+            }) 
+            return has_province
         },
-        setCountry(country) {
-            this.country = country
-            this.country = this.country.reverse()
-            let last_day = this.country[0]
-            this.main.TotalConfirmed = last_day.Confirmed 
-            this.main.TotalDeaths = last_day.Deaths 
-            this.main.TotalRecovered = last_day.Recovered 
+        getProvince(province) {
+            let prov = {}
+            this.provinces.forEach(_province => {
+                if (_province.name == province.Province) {
+                    prov = _province
+                }
+            })
+            return prov
+        },
+        setCountry(country_cases) {
+            this.country_cases = country_cases
+            this.country_cases = this.country_cases.reverse()
+            let last_day = this.country_cases[0]
+            this.global_cases.TotalConfirmed = last_day.Confirmed 
+            this.global_cases.TotalDeaths = last_day.Deaths 
+            this.global_cases.TotalRecovered = last_day.Recovered 
         },
 
         // Country
@@ -185,7 +229,7 @@ export default {
             this.loading = true
             let url = `${this.api_url}world?from=${country.Date}&to=${country.Date}`
             console.log(`url: ${url}`)
-            let res = await axios.get(url)
+            let res = await this.$axios.get(url)
             console.log(res)
         }
     }
@@ -195,22 +239,22 @@ export default {
 <style>
 
 #nprogress .bar {
-    background: red !important;
+    background: #FFF !important;
 }
 
 #nprogress .peg {
-    box-shadow: 0 0 10px red, 0 0 5px red !important;
+    box-shadow: 0 0 10px #FFF, 0 0 5px #FFF !important;
 }
 
 #nprogress .spinner-icon {
-    border-top-color: red !important;
-    border-left-color: red !important;
+    border-top-color: #FFF !important;
+    border-left-color: #FFF !important;
 }
 * {
     box-sizing: border-box;
+    font-family: Nunito, Helvetica, Arial, sans-serif
 }
 #app {
-    font-family: Avenir, Helvetica, Arial, sans-serif;
     background-size: cover;
     background-position: bottom;
     background: linear-gradient(#66ADF7, #2971BD);
@@ -218,28 +262,44 @@ export default {
     min-height: 100vh;
     max-height: 100vh;
     overflow: auto;
+    padding: 1em 0;
 }
-@media screen and (min-width: 768px) {
-    main {
-        width: 50%;
-        margin: auto;
-    }
+.row {
+    justify-content: center;
+    margin-bottom: 1em;
+}
+.row:last-child {
+    margin-bottom: 0;
+}
+.title {
+    text-align: center;
+    font-weight: 700;
+    font-size: 1.2em;
+    color: #FFF;
+    text-shadow: 1px 1px 5px #000;
+    margin: 0;
+}
+.card {
+    -webkit-box-shadow: 0px 2px 8px -2px rgba(0,0,0,0.75);
+    -moz-box-shadow: 0px 2px 8px -2px rgba(0,0,0,0.75);
+    box-shadow: 0px 2px 8px -2px rgba(0,0,0,0.75);
+    background: rgba(255,255,255,.5);
+}
+.card:last-child {
+    margin-bottom: 0;
+}
+.card-body {
+    padding: 0;
+    display: flex;
+    justify-content: space-between;
+}
+.card-data {
+    font-weight: bold;
+    font-size: 1.1em;
+    color: #333;
 }
 #app.bg-red {
     background-color: #DA0E0E;
-}
-main {
-    overflow: auto;
-    padding: 1em;
-}
-.search-box {
-    margin-bottom: 20px;
-    width: 100%;
-    display: flex;
-    justify-content: center;
-}
-.search-input {
-    width: 100%;
 }
 .result-box {
     display: flex;
@@ -249,47 +309,10 @@ main {
 }
 .card{
     width: 100%;
-    background: rgba(255,255,255,.5);
     border-radius: .3em;
     padding: .7em;
     text-align: center;
     color: #333;
     margin-bottom: 20px;
-}
-.card > .title {
-    text-align: start;
-    font-weight: 700;
-    font-size: 1.2em;
-    border-left: 4px solid #FFF;
-    padding: .5em .7em;
-    color: #FFF;
-    text-shadow: 1px 1px 5px #000;
-    margin: 0;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-}
-ul {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-}
-li {
-    border-bottom: 1px solid #333;
-    padding: .7em 0;
-    display: flex;
-    justify-content: space-between;
-}
-li:last-child {
-    border: none;
-}
-li .title {
-    text-align: start;
-    font-size: 1em;
-    font-weight: 600;
-}
-li .data {
-    font-size: 1.2em;
-    font-weight: 700;
 }
 </style>

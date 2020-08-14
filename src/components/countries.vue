@@ -1,26 +1,41 @@
 <template>
-    <div class="card" v-show="country.length == 0">
-        <p class="title">
-            Paises con mas casos
-        </p>
-        <ul>
-            <li v-for="country in countries"
-                :key="country.Slug">
-                <button class="title" @click="showCountry(country)">
-                    {{ country.Country }}
-                </button>
-                <span class="data">
-                    {{ format(country.TotalConfirmed) }}
-                </span>
-            </li>
-        </ul>
-    </div>
+    <b-row>
+        <b-col md="6">
+            <div class="card" v-show="country_cases.length == 0 && provinces.length == 0">
+                <b-container>
+                    <b-row>
+                        <b-col>
+                            <p class="title">
+                                Paises con mas casos
+                            </p>
+                        </b-col>
+                    </b-row>
+                    <b-row>
+                        <b-col>
+                            <b-card 
+                            @click="showCountry(country)"
+                            v-for="country in countries"
+                            :key="country.Slug">
+                                <span class="card-data">
+                                    {{ country.Country }}
+                                </span>
+                                <span class="card-data">
+                                    {{ format(country.TotalConfirmed) }}
+                                </span>
+                            </b-card>
+                        </b-col>
+                    </b-row>
+                </b-container>
+            </div>
+        </b-col>
+    </b-row>
 </template>
 <script>
 export default {
 	props: {
         countries: Array,
-		country: Array,
+		country_cases: Array,
+        provinces: Array,
 	},
 	methods: {
 		showCountry(country) {
@@ -30,9 +45,7 @@ export default {
 }
 </script>
 <style scoped>
-button {
-    background: none;
-    border: none;
+.card {
     cursor: pointer;
 }
 </style>
